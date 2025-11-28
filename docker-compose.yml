@@ -1,0 +1,65 @@
+﻿services:
+  db:
+    image: postgres:15
+    container_name: booking_db
+    restart: always
+    environment:
+      POSTGRES_USER: roshai
+      POSTGRES_PASSWORD: roshaipass
+      POSTGRES_DB: roshai_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  service_a:
+    build: ./django_service
+    container_name: reservation_service
+    command: >
+      sh -c "
+      python manage.py migrate &&
+      python manage.py seed_data &&
+      gunicorn service_a.wsgi:application --bind 0.0.0.0:8000 --workers 3
+      "
+    environment:
+      POSTGRES_USER: roshai
+      POSTGRES_PASSWORD: roshaipass
+      POSTGRES_DB: roshai_db
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      JWT_SECRET: supersecret_shared_jwt_key
+      JWT_ALGORITHM: HS256
+      SERVICE_A_INTERNAL_TOKEN: service-a-internal-token
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  service_b:
+    build: ./service_b
+    container_name: api_gateway
+    environment:
+      DATABASE_URL: postgresql://roshai:roshaipass@db:5432/roshai_db
+      JWT_SECRET: supersecret_shared_jwt_key
+      JWT_ALGORITHM: HS256
+      SERVICE_A_URL: http://service_a:8000
+      SERVICE_A_INTERNAL_TOKEN: service-a-internal-token
+      PORT: 4000
+    depends_on:
+      - db
+      - service_a
+    ports:
+      - "4000:4000"
+
+  frontend:
+    build: ./frontend
+    container_name: booking_frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:4000/api
+    ports:
+      - "3000:80"
+    depends_on:
+      - service_b
+
+volumes:
+  pgdata:
